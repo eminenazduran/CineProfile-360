@@ -1,2 +1,4 @@
 ﻿cineprofile-backend/node_modules
 cineprofile-backend/.env
+apps/.env
+apps/frontend/.env
