@@ -1,0 +1,46 @@
+openapi: 3.0.3
+info:
+  title: CineProfile360 Backend - Analyze SRT
+  version: 0.1.0
+paths:
+  /api/analyze-srt:
+    post:
+      summary: Proxy SRT/text to Analyzer and normalize response
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text:
+                  type: string
+                  description: "SRT or plain text (v0: plain text)"
+      responses:
+        "200":
+          description: Normalized analysis result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  scores:
+                    type: object
+                    properties:
+                      violence: { type: number }
+                      fear: { type: number }
+                  risk_spans:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        start: { type: number }
+                        end: { type: number }
+                        type: { type: string }
+        "400":
+          description: Bad request (missing text)
+        "502":
+          description: Analyzer upstream error
+        "500":
+          description: Internal server error

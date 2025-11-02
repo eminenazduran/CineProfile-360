@@ -4,6 +4,8 @@ import dotenv from "dotenv";
 import analyzeTestRouter from "./routes/analyzeTest.js";
 import { testDb } from "./db/pool.js";
 import mockAnalyzerRouter from "./routes/mockAnalyzer.js";
+import analyzeSrtRouter from "./routes/analyzeSrt.js";
+
 
 
 dotenv.config();
@@ -11,6 +13,8 @@ dotenv.config();
 const app = express();
 app.use(cors());
 app.use(express.json());
+app.use("/api", analyzeSrtRouter);
+
 
 app.get("/health", (req, res) => res.status(200).json({ status: "ok" }));
 app.use("/__mock", mockAnalyzerRouter);
