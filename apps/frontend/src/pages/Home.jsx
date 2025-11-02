@@ -1,16 +1,58 @@
+import { useState } from "react";
+import { Link } from "react-router-dom";
+import { analyzeTest } from "../services/api";
+
 export default function Home() {
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState(null);
+
+  async function handleAnalyze() {
+    try {
+      setLoading(true);
+      const data = await analyzeTest();
+      console.log("analyzeTest →", data); // DoD: console'da JSON
+      setResult(data);                     // ekranda da göster
+    } catch (err) {
+      console.error(err);
+      alert("Analiz çağrısı hata verdi: " + err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
-    <section className="space-y-6">
-      <h1 className="text-4xl font-extrabold text-blue-500">Hoş geldin 👋</h1>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {[1,2,3,4,5,6].map((i) => (
-          <article key={i} className="bg-gray-900 border border-gray-800 rounded-2xl p-4">
-            <div className="aspect-video bg-gray-800 rounded-xl mb-3" />
-            <h3 className="font-semibold">Sahte Film {i}</h3>
-            <p className="text-sm text-gray-400">Kısa açıklama • Tür • 2024</p>
-          </article>
-        ))}
+    <div className="space-y-6">
+      <h1 className="text-3xl font-bold text-blue-400">Hoş geldin 👋</h1>
+
+      <div className="rounded-2xl border border-white/10 bg-gray-900/60 p-6 shadow-lg">
+        <h2 className="text-xl font-semibold mb-2">Film/İçerik Analizi</h2>
+        <p className="text-sm text-gray-300 mb-4">
+          Metni Analyzer'a gönderip skorları ve <code>risk_spans</code> sonuçlarını al.
+        </p>
+
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleAnalyze}
+            disabled={loading}
+            className="rounded-xl px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-60"
+          >
+            {loading ? "Analiz ediliyor..." : "Analizi Test Et"}
+          </button>
+
+          <Link
+            to="/watch"
+            className="rounded-xl px-4 py-2 border border-white/15 hover:bg-white/10"
+          >
+            İzleme
+          </Link>
+        </div>
+
+        {result && (
+          <pre className="mt-4 max-h-72 overflow-auto rounded-lg bg-black/40 p-3 text-sm">
+            {JSON.stringify(result, null, 2)}
+          </pre>
+        )}
       </div>
-    </section>
-  )
+    </div>
+  );
 }
