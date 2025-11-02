@@ -1,0 +1,39 @@
+1
+00:00:00,000 --> 00:00:10,000
+We are walking to the park.
+
+2
+00:00:10,000 --> 00:00:20,000
+He found a strange toy.
+
+3
+00:00:20,000 --> 00:00:30,000
+She heard a scream in the distance.
+
+4
+00:00:30,000 --> 00:00:40,000
+They tried to stay calm and look around.
+
+5
+00:00:40,000 --> 00:00:50,000
+There was blood on the floor near the door.
+
+6
+00:00:50,000 --> 00:01:00,000
+Someone said they saw a man with a gun.
+
+7
+00:01:00,000 --> 00:01:10,000
+Nothing else happened after that.
+
+8
+00:01:10,000 --> 00:01:20,000
+But another scream echoed through the hallway.
+
+9
+00:01:20,000 --> 00:01:30,000
+They decided to leave the building.
+
+10
+00:01:30,000 --> 00:01:40,000
+Outside, the street was empty and cold.
