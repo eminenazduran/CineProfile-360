@@ -1,0 +1,18 @@
+Lokal geliştirme notları (Gamze - Gün 2)
+
+- MongoDB Atlas:
+  * Network Access → IP Allowlist: sadece ekip IP'lerini ekleyin.
+  * Geçici testte 0.0.0.0/0 açabilirsiniz ama test bitince kapatın.
+
+- AWS RDS (PostgreSQL):
+  * Security Group (Inbound): 5432 portu, kaynak olarak sadece ekip IP'leri.
+  * VPC'de public erişim yerine bastion/SSM ile erişim tercih edin (ileride).
+
+- Geçici tüneller:
+  * Backend: ngrok http 3000
+  * Analyzer: ngrok http 5001
+  * Tünel URL'lerini sadece kısa testlerde ekip içinde paylaşın.
+
+- Docker imajları (lokal test):
+  * Backend: docker build -t cineprofile-backend:dev ./cineprofile-backend
+  * Analyzer: docker build -t cineprofile-analyzer:dev ./cineprofile-analyzer
