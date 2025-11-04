@@ -1,11 +1,12 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
-import { analyzeTest } from "../services/api";
+import { Link, useNavigate } from "react-router-dom";
+import { analyzeTest, analyzeSrtUpload } from "../services/api";
 
 export default function Home() {
-  const [text, setText] = useState(
-    "he saw a gun and started to scream"
-  );
+  const navigate = useNavigate();
+
+  // metin analiz formu (gün 3)
+  const [text, setText] = useState("he saw a gun and started to scream");
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -15,7 +16,7 @@ export default function Home() {
     setError("");
     setResult(null);
     try {
-      const json = await analyzeTest(text); // /api/analyze-test çağrısı
+      const json = await analyzeTest(text);
       setResult(json);
     } catch (e) {
       setError(e.message || "Bir hata oluştu");
@@ -24,22 +25,56 @@ export default function Home() {
     }
   }
 
+  // SRT upload (gün 4)
+  const [file, setFile] = useState(null);
+  const [srtResult, setSrtResult] = useState(null);
+  const [srtErr, setSrtErr] = useState("");
+  const [srtLoading, setSrtLoading] = useState(false);
+
+  async function handleSrtAnalyze() {
+    if (!file) return;
+    setSrtLoading(true);
+    setSrtErr("");
+    setSrtResult(null);
+    try {
+      const json = await analyzeSrtUpload(file); // POST /api/analyze-srt-upload
+      setSrtResult(json);
+    } catch (e) {
+      setSrtErr(e.message || "SRT analizi hata verdi");
+    } finally {
+      setSrtLoading(false);
+    }
+  }
+
+  function goWatch() {
+    if (!srtResult) return;
+    // Watch’a risk_spans & scores ve örnek bir video adresi gönderiyoruz
+    navigate("/watch", {
+      state: {
+        src: "/sample.mp4",              // public/ içine koyduğun dosya varsa
+        riskSpans: srtResult.risk_spans, // analyzer’dan gelen
+        scores: srtResult.scores || {},
+        totalDuration: 120               // gerçek süre yoksa kaba tahmin
+      }
+    });
+  }
+
   return (
-    <div className="space-y-6">
-      <div className="flex items-baseline justify-between">
+    <div className="space-y-10">
+      <header className="flex items-baseline justify-between">
         <h1 className="text-3xl font-bold text-blue-400">
           Hoş geldin <span className="ml-2">👋</span>
         </h1>
-        <div className="space-x-3 text-sm">
+        <nav className="space-x-3 text-sm">
           <Link className="hover:underline" to="/">Anasayfa</Link>
           <Link className="hover:underline" to="/watch">İzleme</Link>
           <Link className="hover:underline" to="/settings">Ayarlar</Link>
-        </div>
-      </div>
+        </nav>
+      </header>
 
-      {/* Film/İçerik Analizi Kartı */}
-      <div className="bg-gray-900/50 border border-gray-800 rounded-2xl p-6">
-        <h2 className="text-xl font-semibold mb-2">Film/İçerik Analizi</h2>
+      {/* Gün 3 — Metin Analizi */}
+      <section className="bg-gray-900/50 border border-gray-800 rounded-2xl p-6">
+        <h2 className="text-xl font-semibold mb-2">Film/İçerik Analizi (Metin)</h2>
         <p className="text-gray-400 mb-4">
           Metni Analyzer’a gönderip skorları ve <code>risk_spans</code> sonuçlarını al.
         </p>
@@ -60,28 +95,58 @@ export default function Home() {
             {loading ? "Analiz ediliyor…" : "Analizi Test Et"}
           </button>
 
-          <Link
-            to="/watch"
-            className="px-4 py-2 rounded-xl bg-gray-800 hover:bg-gray-700"
-          >
+          <Link to="/watch" className="px-4 py-2 rounded-xl bg-gray-800 hover:bg-gray-700">
             İzleme
           </Link>
         </div>
 
-        {/* Hata */}
-        {error && (
-          <div className="mt-4 text-red-400 text-sm">
-            Analiz çağrısı hata verdi: {error}
-          </div>
-        )}
-
-        {/* Sonuç JSON */}
+        {error && <div className="mt-4 text-red-400 text-sm">Analiz çağrısı hata verdi: {error}</div>}
         {result && (
           <pre className="mt-4 max-h-[420px] overflow-auto rounded-xl bg-black/60 border border-gray-800 p-4 text-sm">
 {JSON.stringify(result, null, 2)}
           </pre>
         )}
-      </div>
+      </section>
+
+      {/* Gün 4 — SRT Dosyası Analizi */}
+      <section className="bg-gray-900/50 border border-gray-800 rounded-2xl p-6">
+        <h2 className="text-xl font-semibold mb-2 flex items-center gap-2">
+          <span>📝 SRT Dosyası Analizi</span>
+        </h2>
+        <p className="text-gray-400 mb-4">
+          .srt dosyasını yükleyip Analyzer sonuçlarını al (scores + risk_spans). Ardından Watch sayfasında timeline/uyarıyı gör.
+        </p>
+
+        <div className="flex gap-3 items-center">
+          <input
+            type="file"
+            accept=".srt"
+            onChange={(e) => setFile(e.target.files?.[0] || null)}
+            className="file:mr-3 file:px-3 file:py-2 file:rounded-md file:bg-gray-800 file:border file:border-gray-700"
+          />
+          <button
+            onClick={handleSrtAnalyze}
+            disabled={!file || srtLoading}
+            className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50"
+          >
+            {srtLoading ? "Analiz ediliyor…" : "Analiz Et"}
+          </button>
+          <button
+            onClick={goWatch}
+            disabled={!srtResult}
+            className="px-4 py-2 rounded-xl bg-gray-800 hover:bg-gray-700 disabled:opacity-50"
+          >
+            Watch’ta Gör
+          </button>
+        </div>
+
+        {srtErr && <div className="mt-4 text-red-400 text-sm">{srtErr}</div>}
+        {srtResult && (
+          <pre className="mt-4 max-h-[420px] overflow-auto rounded-xl bg-black/60 border border-gray-800 p-4 text-sm">
+{JSON.stringify(srtResult, null, 2)}
+          </pre>
+        )}
+      </section>
     </div>
   );
 }

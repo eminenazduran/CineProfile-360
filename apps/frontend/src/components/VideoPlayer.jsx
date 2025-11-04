@@ -1,7 +1,7 @@
 // src/components/VideoPlayer.jsx
 import React, { forwardRef, useImperativeHandle, useRef, useState } from "react";
 
-const VideoPlayer = forwardRef(function VideoPlayer({ src }, ref) {
+const VideoPlayer = forwardRef(function VideoPlayer({ src, onTimeUpdate }, ref) {
   const videoRef = useRef(null);
   const [isReady, setIsReady] = useState(false);
   const [err, setErr] = useState(null);
@@ -10,8 +10,12 @@ const VideoPlayer = forwardRef(function VideoPlayer({ src }, ref) {
     seekTo(seconds) {
       if (videoRef.current) {
         videoRef.current.currentTime = seconds;
-        videoRef.current.play();
+        videoRef.current.play?.();
       }
+    },
+    // Overlay/uyarı hesabı için anlık zamanı dışarı ver
+    currentTime() {
+      return videoRef.current?.currentTime || 0;
     },
   }));
 
@@ -21,7 +25,7 @@ const VideoPlayer = forwardRef(function VideoPlayer({ src }, ref) {
         ref={videoRef}
         className="w-full aspect-video"
         src={src || ""}
-        // Test kolaylığı için (istersen kaldır): 
+        // Test kolaylığı için:
         muted
         autoPlay={false}
         preload="metadata"
@@ -29,6 +33,7 @@ const VideoPlayer = forwardRef(function VideoPlayer({ src }, ref) {
         controls
         onLoadedMetadata={() => setIsReady(true)}
         onLoadedData={() => setIsReady(true)}
+        onTimeUpdate={(e) => onTimeUpdate?.(e.target.currentTime)}
         onError={(e) => {
           const m = e?.currentTarget?.error?.message || "Video yüklenemedi";
           setErr(m);
