@@ -1,0 +1,20 @@
+CineProfile 360 - Log Standardı (v1.0)
+--------------------------------------
+
+📦 LOG YAPISI:
+- Uygulama logları: AWS S3 / logs/ klasörüne yazılır.
+- Her dosya, tarih-saat bazlı isimlendirilir (YYYY-MM-DD_HH-mm.log)
+- Hata ve analiz süreçleri ayrı dosyalara yönlendirilir:
+  - error_<timestamp>.log
+  - analyzer_<timestamp>.log
+
+🪣 S3 DİZİN YAPISI:
+- subtitles/ → altyazı dosyaları (.srt)
+- logs/ → uygulama logları
+
+📋 LOG FORMAT ÖRNEĞİ:
+[2025-11-04 21:30:12] [INFO] Analyzer service started
+[2025-11-04 21:30:13] [WARN] Missing subtitle line detected
+[2025-11-04 21:30:15] [ERROR] MongoDB connection timeout
+
+✅ Tüm loglar CloudWatch’a paralel olarak S3’te saklanabilir.
