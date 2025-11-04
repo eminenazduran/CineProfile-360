@@ -1,38 +1,31 @@
 import express from "express";
 const router = express.Router();
 
-// Basit bellek cache’i
-const cache = {};
+const cache = new Map();
 
-// GET /api/risks/:titleId
-router.get("/risks/:titleId", async (req, res) => {
+/**
+ * GET /api/risks/:titleId
+ * Stub: Analyzer çıktısını cache ederek döner.
+ */
+router.get("/risks/:titleId", (req, res) => {
   const { titleId } = req.params;
 
-  // Eğer daha önce istek yapıldıysa cache’ten dön
-  if (cache[titleId]) {
-    console.log("🌀 Cache hit:", titleId);
-    return res.json(cache[titleId]);
+  if (cache.has(titleId)) {
+    return res.json(cache.get(titleId));
   }
 
-  try {
-    // Şimdilik dummy analyzer verisi
-    const dummy = {
-      titleId,
-      violence: Math.floor(Math.random() * 10),
-      fear: Math.floor(Math.random() * 10),
-      risk_spans: [
-        { start: 10, end: 25, type: "violence", score: 6 },
-        { start: 40, end: 55, type: "fear", score: 8 },
-      ],
-    };
+  const data = {
+    titleId,
+    violence: 3,
+    fear: 7,
+    risk_spans: [
+      { start: 10, end: 25, type: "violence", score: 6 },
+      { start: 40, end: 55, type: "fear", score: 8 },
+    ],
+  };
 
-    // Cache’e kaydet
-    cache[titleId] = dummy;
-    res.json(dummy);
-  } catch (err) {
-    console.error("risks route error:", err);
-    res.status(500).json({ error: "Internal server error" });
-  }
+  cache.set(titleId, data);
+  res.json(data);
 });
 
 export default router;
