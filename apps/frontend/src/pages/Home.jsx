@@ -1,6 +1,8 @@
+// apps/frontend/src/pages/Home.jsx
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { analyzeTest, analyzeSrtUpload } from "../services/api";
+import ScoresBar from "../components/ScoresBar"; // ✅ Skor bar bileşeni eklendi
 
 export default function Home() {
   const navigate = useNavigate();
@@ -48,13 +50,12 @@ export default function Home() {
 
   function goWatch() {
     if (!srtResult) return;
-    // Watch’a risk_spans & scores ve örnek bir video adresi gönderiyoruz
     navigate("/watch", {
       state: {
-        src: "/sample.mp4",              // public/ içine koyduğun dosya varsa
+        src: "/test.mp4",              // public/ içine koyduğun dosya varsa
         riskSpans: srtResult.risk_spans, // analyzer’dan gelen
         scores: srtResult.scores || {},
-        totalDuration: 120               // gerçek süre yoksa kaba tahmin
+        totalDuration: 120
       }
     });
   }
@@ -100,7 +101,26 @@ export default function Home() {
           </Link>
         </div>
 
-        {error && <div className="mt-4 text-red-400 text-sm">Analiz çağrısı hata verdi: {error}</div>}
+        {error && (
+          <div className="mt-4 text-red-400 text-sm">
+            Analiz çağrısı hata verdi: {error}
+          </div>
+        )}
+
+        {/* ✅ Skor Barları (hem eski hem yeni şemayı destekler) */}
+        {result && (
+          <div className="mt-4">
+            <ScoresBar
+              scores={{
+                violence: result.scores?.violence ?? result.violence ?? 0,
+                fear: result.scores?.fear ?? result.fear ?? 0,
+                jumpscare: result.scores?.jumpscare ?? result.jumpscare ?? 0,
+              }}
+            />
+          </div>
+        )}
+
+        {/* JSON çıktısı */}
         {result && (
           <pre className="mt-4 max-h-[420px] overflow-auto rounded-xl bg-black/60 border border-gray-800 p-4 text-sm">
 {JSON.stringify(result, null, 2)}
@@ -141,6 +161,20 @@ export default function Home() {
         </div>
 
         {srtErr && <div className="mt-4 text-red-400 text-sm">{srtErr}</div>}
+
+        {/* ✅ SRT skor barları */}
+        {srtResult && (
+          <div className="mt-4">
+            <ScoresBar
+              scores={{
+                violence: srtResult.scores?.violence ?? srtResult.violence ?? 0,
+                fear: srtResult.scores?.fear ?? srtResult.fear ?? 0,
+                jumpscare: srtResult.scores?.jumpscare ?? srtResult.jumpscare ?? 0,
+              }}
+            />
+          </div>
+        )}
+
         {srtResult && (
           <pre className="mt-4 max-h-[420px] overflow-auto rounded-xl bg-black/60 border border-gray-800 p-4 text-sm">
 {JSON.stringify(srtResult, null, 2)}

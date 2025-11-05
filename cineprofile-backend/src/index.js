@@ -2,7 +2,7 @@
 import dotenv from "dotenv";
 import express from "express";
 import cors from "cors";
-import fetch from "node-fetch";
+import multer from "multer";
 
 dotenv.config();
 
@@ -10,8 +10,9 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+const upload = multer(); // bellek üstünde dosya tutar
 const PORT = process.env.PORT || 3000;
-const ANALYZER_URL = process.env.ANALYZER_URL || "http://localhost:5000";
+const ANALYZER_URL = process.env.ANALYZER_URL || "http://127.0.0.1:5001";
 
 // ---- BASİT TESTLER ----
 app.get("/health", (_req, res) => res.json({ status: "ok" }));
@@ -27,13 +28,12 @@ app.get("/api/risks/:titleId", (req, res) => {
     fear: 7,
     risk_spans: [
       { start: 10, end: 25, type: "violence", score: 6 },
-      { start: 40, end: 55, type: "fear", score: 8 }
-    ]
+      { start: 40, end: 55, type: "fear", score: 8 },
+    ],
   });
 });
 
-// ---- GÜN 5: BACKEND → ANALYZER PROXY ----
-// POST /api/analyze-test  →  ANALYZER_URL/analyze
+// ---- GÜN 5: BACKEND → ANALYZER PROXY (metin analizi) ----
 app.post("/api/analyze-test", async (req, res) => {
   try {
     const r = await fetch(`${ANALYZER_URL}/analyze`, {
@@ -42,10 +42,39 @@ app.post("/api/analyze-test", async (req, res) => {
       body: JSON.stringify(req.body || {}),
     });
     const data = await r.json();
-    res.json(data);
+    return res.status(r.status).json(data);
   } catch (err) {
     console.error("analyze-test error:", err);
-    res.status(500).json({ error: "Analyzer proxy failed", detail: String(err) });
+    return res.status(500).json({ error: "Analyzer proxy failed", detail: String(err) });
+  }
+});
+
+// ✅ ---- GÜN 6: SRT UPLOAD PROXY ----
+app.post("/api/analyze-srt-upload", upload.single("file"), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "file is required" });
+    }
+
+    // Node 18+ global FormData / Blob
+    const form = new FormData();
+    form.append("file", new Blob([req.file.buffer]), req.file.originalname);
+
+    const r = await fetch(`${ANALYZER_URL}/analyze`, {
+      method: "POST",
+      body: form,
+    });
+
+    if (!r.ok) {
+      const msg = await r.text();
+      throw new Error(`Analyzer responded ${r.status}: ${msg}`);
+    }
+
+    const data = await r.json();
+    return res.status(r.status).json(data);
+  } catch (err) {
+    console.error("analyze-srt-upload error:", err);
+    return res.status(500).json({ error: "Analyzer proxy failed", detail: String(err) });
   }
 });
 
