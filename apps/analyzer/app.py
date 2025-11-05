@@ -1,175 +1,129 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import os, re
-from typing import Dict, List, Tuple
+import os, re, math, time
 
+# ==== Ayarlar ====
 PORT = int(os.getenv("PORT", 5001))
+MAX_UPLOAD_BYTES = 2_000_000     # ~2MB sınırı (Gün 6 gereği: büyük dosya notu)
 
 app = Flask(__name__)
 CORS(app)
 
-# =========================
-#  Gün 5 – Kurallar / Desenler
-# =========================
-# Not: violence ve fear varolan alanlarla geriye uyumluluk için zorunlu.
-# Diğer kategoriler (profanity, sexual) opsiyoneldir – tüketen servis yoksayabilir.
-CATEGORY_PATTERNS: Dict[str, re.Pattern] = {
-    # EN + TR basit kökler (kısa listeler, MVP amaçlı)
-    "violence": re.compile(
-        r"\b(blood|kill|gun|knife|shoot|attack|stab|punch|dead|death|murder|violence|kan|öldür|silah|bıçak|vur|saldır|ölü(m)?)\b",
-        re.IGNORECASE,
-    ),
-    "fear": re.compile(
-        r"\b(scream|terror|horror|scare|panic|fear|cry|çığlık|korku|dehşet|panik)\b",
-        re.IGNORECASE,
-    ),
-    # Ek kategoriler (opsiyonel)
-    "profanity": re.compile(
-        r"\b(damn|hell|shit|fuck|lanet|kahrol|siktir|bok)\b",
-        re.IGNORECASE,
-    ),
-    "sexual": re.compile(
-        r"\b(sex|sexual|kiss|nude|naked|öper|öpücük|çıplak|seks)\b",
-        re.IGNORECASE,
-    ),
-}
+# ==== KATEGORİ SÖZLÜKLERİ (TR/EN varyasyonları, kök bazlı) ====
+# Not: \w* ile temel ek/çekim varyasyonlarını kapsıyoruz.
+VIOLENCE_PATTERNS = [
+    r"blood", r"kan",
+    r"(kill|öldür)\w*", r"(knife|bıçak)\w*",
+    r"(gun|silah)\w*", r"(shoot|ateş)\w*", r"vur\w*",
+    r"(explode|patla)\w*"
+]
 
-# Tokenizer (TR karakter desteği)
+FEAR_PATTERNS = [
+    r"(scream|çığlık)\w*", r"(fear|kork)\w*", r"(panic|panik)\w*",
+    r"dehşet", r"ürper\w*", r"kaç\w*"
+]
+
+# İstersen ileride toparlamak için hazır dursun (şimdilik skor=0 dönecek)
+PROFANITY_PATTERNS = [
+    # ör: r"(fuck|shit|lanet)\w*"
+]
+SEXUAL_PATTERNS = [
+    # ör: r"(sex|seks|erotik)\w*"
+]
+
+def _compile_any(patterns):
+    return re.compile(r"\b(?:%s)\b" % "|".join(patterns), re.IGNORECASE)
+
+RE_VIOLENCE = _compile_any(VIOLENCE_PATTERNS)
+RE_FEAR     = _compile_any(FEAR_PATTERNS)
+RE_PROF     = _compile_any(PROFANITY_PATTERNS) if PROFANITY_PATTERNS else re.compile(r"(?!x)x")
+RE_SEX      = _compile_any(SEXUAL_PATTERNS)    if SEXUAL_PATTERNS else re.compile(r"(?!x)x")
+
+# Türkçe karakterleri de kapsayan kelime ayracı
 TOKENIZER = re.compile(r"[A-Za-z0-9çğıöşüÇĞİÖŞÜ']+")
 
-# =========================
-#  Yardımcılar (Gün 5)
-# =========================
-def tokenize(text: str) -> List[Tuple[str, int]]:
+# ==== Yardımcılar ====
+def tokenize(text: str):
     return [(m.group(), m.start()) for m in TOKENIZER.finditer(text or "")]
 
-def bucket_seconds(word_index: int, bucket_size_words: int = 10, bucket_seconds_val: int = 10) -> Tuple[int, int]:
-    """
-    Kelime indeksine göre zaman dilimi: 10 kelime ≈ 10 sn (MVP kabulu).
-    """
+def bucket_seconds(word_index: int, bucket_size_words: int = 10, bucket_seconds: int = 10):
+    """Kelime indeksine göre 10 kelime ≈ 10 sn dilimi."""
     bucket = word_index // bucket_size_words
-    start_sec = bucket * bucket_seconds_val
-    end_sec = start_sec + bucket_seconds_val
+    start_sec = bucket * bucket_seconds
+    end_sec = start_sec + bucket_seconds
     return start_sec, end_sec
 
-def count_matches(text: str) -> Dict[str, int]:
+def stable_score(count: int, total_tokens: int) -> float:
     """
-    Tüm kategoriler için metindeki eşleşme sayıları (ham frekans).
+    Gün 6: skoru 0–10 aralığında daha 'stabil' ver.
+    Düşük sıklıkta düşük, arttıkça 10'a yakınsayan yumuşak bir eğri.
     """
-    txt = text or ""
-    return {cat: len(p.findall(txt)) for cat, p in CATEGORY_PATTERNS.items()}
+    if total_tokens <= 0:
+        return 0.0
+    density = count / total_tokens           # 0..1 arası çok küçük bir değer
+    raw = 10.0 * (1 - math.exp(-density * 50))  # yoğunluk arttıkça 10'a yaklaşır
+    return round(min(10.0, raw), 1)
 
-def normalize_score(count: int, factor: float = 2.0, cap: int = 10) -> int:
+def _collect_spans(plain: str, tokens, pattern, span_type: str):
     """
-    Ham frekansı 0–10 aralığına basitçe ölçekle (MVP).
+    Eşleşen her kelimenin geçtiği kelime indeksine bak,
+    10 kelime ~ 10 saniye kovasına çevir ve span ekle.
+    score = 1 (basit bir olay skoru, istersen artırılabilir).
     """
-    return min(cap, int(round(count * factor)))
+    spans = []
+    # Kelime offset listesi (hızlı index bulmak için)
+    word_offsets = [off for _, off in tokens]
 
-def add_spans_by_words(plain: str, tokens: List[Tuple[str, int]]) -> List[Dict]:
-    """
-    Serbest metinde eşleşen kelimeleri bul, 10 kelime ≈ 10 sn kovalarına düşürüp span üret.
-    Her eşleşme 1 puan, aynı kovada birden fazla eşleşme varsa skor artar (min 10).
-    """
-    spans: List[Dict] = []
-    word_offsets = [off for (_, off) in tokens]  # kelime başlangıç ofsetleri
-
-    # Kovada kategori başına toplayarak biraz daha makul skor çıkar
-    bucket_cat_counter: Dict[Tuple[int, str], int] = {}
-
-    for cat, pattern in CATEGORY_PATTERNS.items():
-        for m in pattern.finditer(plain):
-            off = m.start()
-            idx = 0
-            while idx + 1 < len(word_offsets) and word_offsets[idx + 1] <= off:
-                idx += 1
-            st, en = bucket_seconds(idx)
-            bucket_key = (st, cat)
-            bucket_cat_counter[bucket_key] = bucket_cat_counter.get(bucket_key, 0) + 1
-
-    # Kovalanmış sonuçları risk_spans olarak üret
-    for (st, cat), c in bucket_cat_counter.items():
-        spans.append({
-            "start": st,
-            "end": st + 10,
-            "type": cat,
-            "score": min(10, c)  # aynı kovada kaç kez geçtiğine göre basit skor
-        })
-
-    # Zaman sırasına göre
-    spans.sort(key=lambda x: (x["start"], x["type"]))
+    for m in pattern.finditer(plain):
+        off = m.start()
+        # küçük metinlerde lineer index araması yeter
+        idx = 0
+        while idx + 1 < len(word_offsets) and word_offsets[idx + 1] <= off:
+            idx += 1
+        s, e = bucket_seconds(idx)
+        spans.append({"start": s, "end": e, "type": span_type, "score": 1})
     return spans
 
-# =========================
-#  Analizciler
-# =========================
-def analyze_plain_text(text: str) -> Tuple[Dict[str, int], List[Dict]]:
-    """
-    Serbest metin için kategori skorları + risk_spans üretir.
-    - skorlar: tüm kategoriler (violence/fear + opsiyoneller)
-    - spans: kovaya düşen uyarılar
-    """
-    tokens = tokenize(text or "")
+def analyze_plain_text(text: str):
+    """Serbest metin için skor + risk_spans üret."""
     plain = text or ""
+    tokens = tokenize(plain)
+    total_tokens = max(1, len(tokens))
 
-    raw_counts = count_matches(plain)
-    scores_all = {cat: normalize_score(cnt) for cat, cnt in raw_counts.items()}
+    v_spans = _collect_spans(plain, tokens, RE_VIOLENCE, "violence")
+    f_spans = _collect_spans(plain, tokens, RE_FEAR,     "fear")
+    p_spans = _collect_spans(plain, tokens, RE_PROF,     "profanity")
+    s_spans = _collect_spans(plain, tokens, RE_SEX,      "sexual")
 
-    spans = add_spans_by_words(plain, tokens)
+    # sayımlar
+    v_count = len(v_spans)
+    f_count = len(f_spans)
+    p_count = len(p_spans)
+    s_count = len(s_spans)
 
-    # Geriye uyumluluk: violence/fear anahtarları düz seviyede de olsun
     scores = {
-        "violence": scores_all.get("violence", 0),
-        "fear": scores_all.get("fear", 0),
+        "violence": stable_score(v_count, total_tokens),
+        "fear":     stable_score(f_count, total_tokens),
+        "profanity":stable_score(p_count, total_tokens),
+        "sexual":   stable_score(s_count, total_tokens),
     }
-    # Ek kategorileri toplam "scores_all" içinde ayrıca döndürüyoruz (tüketen yok sayabilir)
-    scores["__all__"] = scores_all
 
+    spans = v_spans + f_spans + p_spans + s_spans
     return scores, spans
 
-# ---- Tek satır SRT (Gün 2 uyumu) ----
-def parse_srt_line(srt_line: str) -> Tuple[int, int, str]:
-    m = re.match(
-        r"\s*(\d{2}):(\d{2}):(\d{2}),(\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2}),(\d{3})\s*(.*)$",
-        (srt_line or "").strip()
-    )
-    if not m:
-        return 0, 10, (srt_line or "")
-    h1, m1, s1, ms1, h2, m2, s2, ms2, text = m.groups()
-    start = int(h1)*3600 + int(m1)*60 + int(s1)
-    end   = int(h2)*3600 + int(m2)*60 + int(s2)
-    if end <= start:
-        end = start + 10
-    return start, end, text
-
-def analyze_srt_line(srt_line: str) -> Tuple[Dict[str, int], List[Dict]]:
-    start, end, text = parse_srt_line(srt_line)
-    scores, spans = analyze_plain_text(text)
-    # Kovalanmış spans varsa blok zamanına sabitle
-    block_spans: List[Dict] = []
-    for sp in spans:
-        block_spans.append({
-            "start": start,
-            "end": end,
-            "type": sp["type"],
-            "score": sp.get("score", 1)
-        })
-    return scores, block_spans
-
-# ---- Çok satırlı SRT (Gün 3+) ----
-def parse_srt_blocks(srt_text: str) -> List[Tuple[int, int, str]]:
+# ==== SRT Parsleme (blok bazlı) ====
+def parse_srt_blocks(srt_text: str):
     """
-    SRT blokları:
-      index
-      HH:MM:SS,mmm --> HH:MM:SS,mmm
-      (1+ metin satırı)
-      boş satır
+    index
+    HH:MM:SS,mmm --> HH:MM:SS,mmm
+    text...
+    (boş satır)
     """
-    blocks: List[Tuple[int, int, str]] = []
+    blocks = []
     lines = (srt_text or "").splitlines()
     i = 0
     time_re = re.compile(r"^\s*(\d{2}):(\d{2}):(\d{2}),(\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2}),(\d{3})")
     while i < len(lines):
-        # indeks satırı (sadece sayı) ise atla
         if lines[i].strip().isdigit():
             i += 1
         if i >= len(lines):
@@ -185,60 +139,79 @@ def parse_srt_blocks(srt_text: str) -> List[Tuple[int, int, str]]:
         end   = int(h2)*3600 + int(m2)*60 + int(s2)
         i += 1
 
-        text_lines: List[str] = []
+        text_lines = []
         while i < len(lines) and lines[i].strip() != "":
-            text_lines.append(lines[i]); i += 1
+            text_lines.append(lines[i])
+            i += 1
         text = " ".join(text_lines).strip()
+
         blocks.append((start, end, text))
 
         while i < len(lines) and lines[i].strip() == "":
             i += 1
+
     return blocks
 
-def analyze_srt_file_text(srt_text: str) -> Tuple[Dict[str, int], List[Dict]]:
+def merge_overlaps(spans):
     """
-    Tüm .srt dosyasını blok blok analiz et:
-      - blok içi kategori frekanslarından span üret
-      - toplam kategori skorları normalize edilerek üst seviyeye yazılır
+    Gün 5/6: risk_spans temizliği — çakışan aralıkları birleştir.
+    Tip önceliği basit: violence > fear > profanity > sexual
+    (eşitlikte ilk gelen).
     """
-    blocks = parse_srt_blocks(srt_text)
+    if not spans:
+        return []
 
-    # toplam sayımlar (ham)
-    totals_raw = {cat: 0 for cat in CATEGORY_PATTERNS.keys()}
-    spans: List[Dict] = []
+    priority = {"violence": 4, "fear": 3, "profanity": 2, "sexual": 1}
+    spans_sorted = sorted(spans, key=lambda x: (x["start"], -priority.get(x["type"], 0)))
+
+    merged = [spans_sorted[0].copy()]
+    for cur in spans_sorted[1:]:
+        last = merged[-1]
+        if cur["start"] <= last["end"]:
+            # overlap — birleştir
+            last["end"] = max(last["end"], cur["end"])
+            # tip önceliği — yüksek öncelikli tipi koru
+            if priority.get(cur["type"], 0) > priority.get(last["type"], 0):
+                last["type"] = cur["type"]
+            # skorları toplayıp yumuşat
+            last["score"] = min(10, (last.get("score", 1) + cur.get("score", 1)))
+        else:
+            merged.append(cur.copy())
+    return merged
+
+def analyze_srt_file_text(srt_text: str):
+    """Tüm .srt dosyasını blok bazlı analiz et; birleştirilmiş span listesi ve skorlar döndür."""
+    blocks = parse_srt_blocks(srt_text)
+    agg_spans = []
+    total_tokens = 0
+    v_count = f_count = p_count = s_count = 0
 
     for start, end, text in blocks:
-        raw_counts = count_matches(text)
-        # toplam ham sayıları biriktir
-        for cat, cnt in raw_counts.items():
-            totals_raw[cat] += cnt
+        scores_line, spans_line = analyze_plain_text(text)
+        # sayımlar: span sayısı ile yaklaş (alternatif: findall count)
+        v_count += sum(1 for sp in spans_line if sp["type"] == "violence")
+        f_count += sum(1 for sp in spans_line if sp["type"] == "fear")
+        p_count += sum(1 for sp in spans_line if sp["type"] == "profanity")
+        s_count += sum(1 for sp in spans_line if sp["type"] == "sexual")
 
-        # Blok içi span puanları – o bloktaki her kategori için ham sayıyı skor olarak yaz
-        for cat, cnt in raw_counts.items():
-            if cnt > 0:
-                spans.append({
-                    "start": start,
-                    "end": end,
-                    "type": cat,
-                    "score": min(10, cnt)  # blok içi yoğunluğa göre basit skor
-                })
+        for sp in spans_line:
+            agg_spans.append({"start": start, "end": end, "type": sp["type"], "score": sp.get("score", 1)})
 
-    # normalize toplam skorlar
-    scores_all = {cat: normalize_score(cnt) for cat, cnt in totals_raw.items()}
-    # geriye uyum alanlar
+        total_tokens += max(1, len(tokenize(text)))
+
+    # birleştir/temizle
+    clean_spans = merge_overlaps(agg_spans)
+
+    # stabil skorlar
     scores = {
-        "violence": scores_all.get("violence", 0),
-        "fear": scores_all.get("fear", 0),
+        "violence": stable_score(v_count, total_tokens),
+        "fear":     stable_score(f_count, total_tokens),
+        "profanity":stable_score(p_count, total_tokens),
+        "sexual":   stable_score(s_count, total_tokens),
     }
-    scores["__all__"] = scores_all
+    return scores, clean_spans
 
-    # zaman sırasına diz
-    spans.sort(key=lambda x: (x["start"], x["type"]))
-    return scores, spans
-
-# =========================
-#  Endpoint'ler
-# =========================
+# ==== Endpoints ====
 @app.get("/health")
 def health():
     return jsonify({"status": "ok", "service": "analyzer"}), 200
@@ -246,51 +219,37 @@ def health():
 @app.post("/analyze")
 def analyze():
     """
-    Desteklenen istek tipleri:
-      1) multipart/form-data       → file=@sample.srt
-      2) application/json          → {"text":"..."}  veya {"srt_line":"00:00:10,000 --> 00:00:20,000 hello blood"}
-
-    Dönen şema (MVP):
-    {
-      "violence": int,                 # geriye uyum
-      "fear": int,                     # geriye uyum
-      "scores": { ... tüm kategoriler },
-      "risk_spans": [
-         {"start":sec, "end":sec, "type":"violence|fear|...", "score":int}
-      ]
-    }
+    Desteklenen istekler:
+      1) multipart/form-data  → file=@sample.srt  (Gün 6: boyut sınırı, latency ölçümü)
+      2) application/json     → {"text":"..."}
+    Şema:
+      {
+        "scores": {"violence":0..10,"fear":0..10,"profanity":0..10,"sexual":0..10},
+        "risk_spans":[{"start":sec,"end":sec,"type":"...","score":int}],
+        "latency_ms": float
+      }
     """
-    # 1) .srt dosyası
+    t0 = time.perf_counter()
+
+    # 1) SRT upload
     if "file" in request.files:
         f = request.files["file"]
-        content = f.read().decode("utf-8", errors="ignore")
+        raw = f.read()
+        if len(raw) > MAX_UPLOAD_BYTES:
+            return jsonify({"error": "file too large", "limit_bytes": MAX_UPLOAD_BYTES}), 413
+        content = raw.decode("utf-8", errors="ignore")
+
         scores, spans = analyze_srt_file_text(content)
-        payload = {
-            "violence": scores.get("violence", 0),
-            "fear": scores.get("fear", 0),
-            "scores": scores.get("__all__", {}),
-            "risk_spans": spans
-        }
-        return jsonify(payload), 200
+        elapsed = round((time.perf_counter() - t0) * 1000.0, 2)
+        return jsonify({"scores": scores, "risk_spans": spans, "latency_ms": elapsed}), 200
 
-    # 2) JSON body
+    # 2) JSON body (plain text)
     data = request.get_json(silent=True) or {}
-    text = data.get("text")
-    srt_line = data.get("srt_line")
+    text = data.get("text", "")
+    scores, spans = analyze_plain_text(text)
 
-    if srt_line:
-        scores, spans = analyze_srt_line(srt_line)
-    else:
-        scores, spans = analyze_plain_text(text or "")
-
-    payload = {
-        "violence": scores.get("violence", 0),
-        "fear": scores.get("fear", 0),
-        "scores": scores.get("__all__", {}),
-        "risk_spans": spans
-    }
-    return jsonify(payload), 200
-
+    elapsed = round((time.perf_counter() - t0) * 1000.0, 2)
+    return jsonify({"scores": scores, "risk_spans": spans, "latency_ms": elapsed}), 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=PORT, debug=True)

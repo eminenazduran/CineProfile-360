@@ -1,0 +1,11 @@
+1
+00:00:05,000 --> 00:00:15,000
+He pulled out a gun and fired.
+
+2
+00:00:15,000 --> 00:00:25,000
+Blood covered the floor.
+
+3
+00:00:25,000 --> 00:00:35,000
+They screamed and tried to escape.
