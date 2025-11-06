@@ -3,12 +3,19 @@ import dotenv from "dotenv";
 import express from "express";
 import cors from "cors";
 import multer from "multer";
+import authRoutes from "./routes/authRoutes.js";
+import policyRoutes from "./routes/policyRoutes.js";
+
 
 dotenv.config();
 
 const app = express();
+
 app.use(cors());
 app.use(express.json());
+
+app.use("/api", authRoutes);
+app.use("/api", policyRoutes);
 
 const upload = multer(); // bellek üstünde dosya tutar
 const PORT = process.env.PORT || 3000;
