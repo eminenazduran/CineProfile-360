@@ -1,25 +1,38 @@
-// src/app.js
-import dotenv from "dotenv";
-import express from "express";
-import cors from "cors";
-
-import authRoutes from "./routes/authRoutes.js";
-import policyRoutes from "./routes/policyRoutes.js";
-import analyzeTestRouter from "./routes/analyzeTest.js"; // varsa analiz test stub'ı
-
-dotenv.config();
+const express = require('express');
+require('dotenv').config();
 
 const app = express();
-app.use(cors());
 app.use(express.json());
 
+// ROUTES
+const analyzeRouter = require('./routes/analyzeTest'); // <-- router dosyan
+app.use('/api', analyzeRouter); // <-- /api/* altına mount
+
 // health
-app.get("/health", (_req, res) => res.status(200).json({ status: "ok" }));
-app.get("/api/__ping", (_req, res) => res.json({ ok: true }));
+app.get('/health', (req, res) => res.json({ ok: true }));
 
-// routes
-app.use("/api", authRoutes);
-app.use("/api", policyRoutes);
-app.use("/api", analyzeTestRouter); // dosya varsa; yoksa bu satır sorun çıkarmaz diye comment'leyebilirsin
+// (debug) yüklü route'ları bir kere logla
+process.nextTick(() => {
+  try {
+    const stack = app._router?.stack || [];
+    const lines = [];
+    for (const layer of stack) {
+      if (layer.route?.path) {
+        const methods = Object.keys(layer.route.methods).filter(m => layer.route.methods[m]).map(m => m.toUpperCase());
+        lines.push(`${methods.join(',')} ${layer.route.path}`);
+      } else if (layer.name === 'router' && layer.handle?.stack) {
+        for (const r of layer.handle.stack) {
+          if (r.route?.path) {
+            const methods = Object.keys(r.route.methods).filter(m => r.route.methods[m]).map(m => m.toUpperCase());
+            lines.push(`${methods.join(',')} /api${r.route.path}`);
+          }
+        }
+      }
+    }
+    console.log('Mounted routes:\n' + (lines.join('\n') || '(none)'));
+  } catch (e) {
+    console.log('Route list error:', e.message);
+  }
+});
 
-export default app;
+module.exports = app;

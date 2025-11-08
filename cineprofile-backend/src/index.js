@@ -1,11 +1,6 @@
-// src/index.js
-import app from "./app.js";
-import analyzeTestRouter from "./routes/analyzeTest.js";
+const app = require('./app');
 
-// ⬇️ Bunu listen'dan ÖNCE ekle
-app.use("/api", analyzeTestRouter);
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`✅ CineProfile360 backend running on port ${PORT}`);
+const port = process.env.PORT || 3000;
+app.listen(port, () => {
+  console.log(`✅ CineProfile360 backend running on port ${port}`);
 });

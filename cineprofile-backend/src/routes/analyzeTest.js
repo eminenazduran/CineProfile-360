@@ -1,44 +1,67 @@
-import express from "express";
-import fetch from "node-fetch";
+const express = require('express');
 const router = express.Router();
+const fetch = require('node-fetch');
+const { pool } = require('../db/pool');
+const logger = require('../logger');
 
-router.post("/analyze-test", async (req, res) => {
+const ANALYZER_URL = process.env.ANALYZER_URL || 'http://127.0.0.1:5001';
+console.log('ANALYZER_URL =', ANALYZER_URL, 'ROUTE =', __filename);
+
+router.post('/analyze-test', async (req, res) => {
+  const { text, title } = req.body || {};
+
   try {
-    const { text = "" } = req.body || {};
-    const ANALYZER_URL = process.env.ANALYZER_URL || "http://127.0.0.1:5001";
+    const t0 = Date.now();
 
-    let result;
-    try {
-      const r = await fetch(`${ANALYZER_URL}/analyze`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
-      });
+    const resp = await fetch(`${ANALYZER_URL}/analyze`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text })
+    });
 
-      if (!r.ok) throw new Error(`Analyzer returned ${r.status}`);
-
-      // Analyzer 200 dönse bile HTML dönebilir → JSON parse hatasını yakalayalım
-      try {
-        result = await r.json();
-      } catch (e) {
-        throw new Error("Analyzer returned non-JSON body");
-      }
-    } catch (err) {
-      console.warn("[Fallback] Analyzer unreachable/non-JSON:", err.message);
-      // Her durumda 200 OK dönen mock
-      result = {
-        violence: 2,
-        fear: 4,
-        risk_spans: [{ start: 5, end: 15, type: "fear", score: 5 }],
-        mock: true,
-      };
+    if (!resp.ok) {
+      const msg = `Analyzer HTTP ${resp.status}`;
+      logger.error({ where: 'analyze-test', err: msg });
+      return res.status(502).json({ ok: false, error: msg });
     }
 
-    return res.status(200).json(result);
-  } catch (e) {
-    console.error("Fatal /analyze-test error:", e);
-    res.status(500).json({ error: "analyze_test_failed" });
-  }
+    const data = await resp.json();
+
+    const elapsed_ms = data.elapsed_ms ?? (Date.now() - t0);
+    const scores = data.scores ?? {};
+    const spans  = data.risk_spans ?? [];
+
+    // 🔧 JSONB cast + stringify (PostgreSQL)
+    const q = `
+      INSERT INTO analyze_logs (title, elapsed_ms, scores, spans)
+      VALUES ($1, $2, $3::jsonb, $4::jsonb)
+      RETURNING id, created_at
+    `;
+    const vals = [
+      title || null,
+      elapsed_ms,
+      JSON.stringify(scores),
+      JSON.stringify(spans),
+    ];
+
+    const result = await pool.query(q, vals);
+    const inserted = result.rows[0];
+
+    return res.json({
+      ok: true,
+      log_id: inserted.id,
+      created_at: inserted.created_at,
+      analyzer: data
+    });
+} catch (err) {
+  logger.error({ where: 'analyze-test', err: err.message || err });
+  // 🔍 geçici debug: tüm hata detayını geri döndür
+  return res.status(500).json({
+    ok: false,
+    error: String(err && err.stack ? err.stack : (err.message || err))
+  });
+}
+
 });
 
-export default router;
+module.exports = router;
