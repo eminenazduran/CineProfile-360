@@ -1,7 +1,7 @@
-import { Link, NavLink } from "react-router-dom"
+import { Link, NavLink } from "react-router-dom";
 
 const linkBase =
-  "px-3 py-2 rounded-lg hover:bg-gray-800 transition-colors text-sm font-medium text-gray-200 no-underline"
+  "px-3 py-2 rounded-lg hover:bg-gray-800 transition-colors text-sm font-medium text-gray-200 no-underline";
 
 export default function Navbar() {
   return (
@@ -17,11 +17,14 @@ export default function Navbar() {
           <NavLink to="/watch" className={({isActive}) => `${linkBase} ${isActive ? "bg-gray-800" : ""}`}>
             İzleme
           </NavLink>
+          <NavLink to="/history" className={({isActive}) => `${linkBase} ${isActive ? "bg-gray-800" : ""}`}>
+            Geçmiş
+          </NavLink>
           <NavLink to="/settings" className={({isActive}) => `${linkBase} ${isActive ? "bg-gray-800" : ""}`}>
             Ayarlar
           </NavLink>
         </nav>
       </div>
     </header>
-  )
+  );
 }

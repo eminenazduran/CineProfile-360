@@ -2,12 +2,12 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { analyzeTest, analyzeSrtUpload } from "../services/api";
-import ScoresBar from "../components/ScoresBar"; // ✅ Skor bar bileşeni eklendi
+import ScoresBar from "../components/ScoresBar";
 
 export default function Home() {
   const navigate = useNavigate();
 
-  // metin analiz formu (gün 3)
+  // Gün 3 — metin analizi
   const [text, setText] = useState("he saw a gun and started to scream");
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
@@ -27,7 +27,7 @@ export default function Home() {
     }
   }
 
-  // SRT upload (gün 4)
+  // Gün 4 — SRT upload
   const [file, setFile] = useState(null);
   const [srtResult, setSrtResult] = useState(null);
   const [srtErr, setSrtErr] = useState("");
@@ -39,7 +39,7 @@ export default function Home() {
     setSrtErr("");
     setSrtResult(null);
     try {
-      const json = await analyzeSrtUpload(file); // POST /api/analyze-srt-upload
+      const json = await analyzeSrtUpload(file);
       setSrtResult(json);
     } catch (e) {
       setSrtErr(e.message || "SRT analizi hata verdi");
@@ -52,25 +52,21 @@ export default function Home() {
     if (!srtResult) return;
     navigate("/watch", {
       state: {
-        src: "/test.mp4",              // public/ içine koyduğun dosya varsa
-        riskSpans: srtResult.risk_spans, // analyzer’dan gelen
+        src: "/test.mp4",
+        riskSpans: srtResult.risk_spans,
         scores: srtResult.scores || {},
-        totalDuration: 120
-      }
+        totalDuration: 120,
+      },
     });
   }
 
   return (
     <div className="space-y-10">
+      {/* Sadece başlık, mini nav KALDIRILDI */}
       <header className="flex items-baseline justify-between">
         <h1 className="text-3xl font-bold text-blue-400">
           Hoş geldin <span className="ml-2">👋</span>
         </h1>
-        <nav className="space-x-3 text-sm">
-          <Link className="hover:underline" to="/">Anasayfa</Link>
-          <Link className="hover:underline" to="/watch">İzleme</Link>
-          <Link className="hover:underline" to="/settings">Ayarlar</Link>
-        </nav>
       </header>
 
       {/* Gün 3 — Metin Analizi */}
@@ -96,6 +92,7 @@ export default function Home() {
             {loading ? "Analiz ediliyor…" : "Analizi Test Et"}
           </button>
 
+          {/* Bu Link kalabilir, global Navbar ayrı çalışıyor */}
           <Link to="/watch" className="px-4 py-2 rounded-xl bg-gray-800 hover:bg-gray-700">
             İzleme
           </Link>
@@ -107,24 +104,21 @@ export default function Home() {
           </div>
         )}
 
-        {/* ✅ Skor Barları (hem eski hem yeni şemayı destekler) */}
         {result && (
-          <div className="mt-4">
-            <ScoresBar
-              scores={{
-                violence: result.scores?.violence ?? result.violence ?? 0,
-                fear: result.scores?.fear ?? result.fear ?? 0,
-                jumpscare: result.scores?.jumpscare ?? result.jumpscare ?? 0,
-              }}
-            />
-          </div>
-        )}
-
-        {/* JSON çıktısı */}
-        {result && (
-          <pre className="mt-4 max-h-[420px] overflow-auto rounded-xl bg-black/60 border border-gray-800 p-4 text-sm">
+          <>
+            <div className="mt-4">
+              <ScoresBar
+                scores={{
+                  violence: result.scores?.violence ?? result.violence ?? 0,
+                  fear: result.scores?.fear ?? result.fear ?? 0,
+                  jumpscare: result.scores?.jumpscare ?? result.jumpscare ?? 0,
+                }}
+              />
+            </div>
+            <pre className="mt-4 max-h-[420px] overflow-auto rounded-xl bg-black/60 border border-gray-800 p-4 text-sm">
 {JSON.stringify(result, null, 2)}
-          </pre>
+            </pre>
+          </>
         )}
       </section>
 
@@ -134,7 +128,8 @@ export default function Home() {
           <span>📝 SRT Dosyası Analizi</span>
         </h2>
         <p className="text-gray-400 mb-4">
-          .srt dosyasını yükleyip Analyzer sonuçlarını al (scores + risk_spans). Ardından Watch sayfasında timeline/uyarıyı gör.
+          .srt dosyasını yükleyip Analyzer sonuçlarını al (scores + risk_spans). Ardından Watch
+          sayfasında timeline/uyarıyı gör.
         </p>
 
         <div className="flex gap-3 items-center">
@@ -162,23 +157,21 @@ export default function Home() {
 
         {srtErr && <div className="mt-4 text-red-400 text-sm">{srtErr}</div>}
 
-        {/* ✅ SRT skor barları */}
         {srtResult && (
-          <div className="mt-4">
-            <ScoresBar
-              scores={{
-                violence: srtResult.scores?.violence ?? srtResult.violence ?? 0,
-                fear: srtResult.scores?.fear ?? srtResult.fear ?? 0,
-                jumpscare: srtResult.scores?.jumpscare ?? srtResult.jumpscare ?? 0,
-              }}
-            />
-          </div>
-        )}
-
-        {srtResult && (
-          <pre className="mt-4 max-h-[420px] overflow-auto rounded-xl bg-black/60 border border-gray-800 p-4 text-sm">
+          <>
+            <div className="mt-4">
+              <ScoresBar
+                scores={{
+                  violence: srtResult.scores?.violence ?? srtResult.violence ?? 0,
+                  fear: srtResult.scores?.fear ?? srtResult.fear ?? 0,
+                  jumpscare: srtResult.scores?.jumpscare ?? srtResult.jumpscare ?? 0,
+                }}
+              />
+            </div>
+            <pre className="mt-4 max-h-[420px] overflow-auto rounded-xl bg-black/60 border border-gray-800 p-4 text-sm">
 {JSON.stringify(srtResult, null, 2)}
-          </pre>
+            </pre>
+          </>
         )}
       </section>
     </div>
